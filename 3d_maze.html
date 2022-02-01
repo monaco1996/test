@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>3D 迷路</title>
+    <script src="three.js"></script>
+    <script>
+        let scene,camera,renderer;
+        let maze = new Array(),w = 25,h = 25;
+        let player,pLight,ambientLight;
+        let px = 1,py = 1,dx = 0,dy = 0;
+        let angle = 0,da = 0;
+        let cnt = 0;
+
+        const init = () => {
+            //画面サイズを取得（幅と高さを補正）
+            const width = window.innerWidth - 20;
+            const height = window.innerHeight - 150;
+            //シーン
+            scene = new THREE.Scene();
+            //カメラ（画角：50、ニアクリップ：0.1、ファークリップ：100）
+            camera = new THREE.PerspectiveCamera(50,width/height,0.1,100);
+            //レンダラー
+            renderer = new THREE.WebGLRenderer({antialias:true});
+            renderer.setSize(width,height);
+            document.getElementById("renderArea").appendChild(renderer.domElement);
+            //ライト（点光源、環境光）
+            pLight = new THREE.PointLight("#FFFFFF",1,10,2);
+            scene.add(pLight);
+            ambientLight = new THREE.AmbientLight("#999999");
+            scene.add(ambientLight);
+            //床、スタート（1,1）、ゴール（w-2,h-2）
+            const plane = createObject(Math.floor(w/2),0,Math.floor(h/2),w,1,h);
+            const start = createObject(1,1,1,0.5,1,24,"#00FFFF","cone");
+            const goal = createObject(w-2,1,h-2,0.5,1,24,"#FF66FF","cone");
+            player = createObject(px,1,py,0.5,1,24,"#FF0000","cone");
+            player.rotation.z = -1 * Math.PI/2;
+            //キーイベントの登録
+            document.addEventListener("keydown",walk);
+            //迷路を作成
+            createMaze();
+            update();
+        }
+
+        const createObject = (x,y,z,a,b,c,color = "#336699",type = "box") => {
+            //オブジェクトの作成
+            let geometry = new THREE.BoxGeometry(a,b,c);
+            if (type == "cone") geometry = new THREE.ConeGeometry(a,b,c);
+            let material = new THREE.MeshLambertMaterial({color:color});
+            const mesh = new THREE.Mesh(geometry,material);
+            mesh.position.set(x,y,z);
+            scene.add(mesh);
+            return mesh;
+        }
+
+        const createMaze = () => {
+            //迷路を作成
+            for (let x=0; x<w; x++) {
+                maze[x] = new Array();
+                for (let y=0; y<h; y++) {
+                    //壁（1）、柱（1）、通路（0）をセット
+                    if ((x==0)||(x==w-1)||(y==0)||(y==h-1)) {
+                        maze[x][y] = 1;
+                    } else if ((x%2 == 0)&&(y%2 == 0)) {
+                        maze[x][y] = 1;
+                    } else {
+                        maze[x][y] = 0;
+                    }
+                }
+            }
+            for (let x=2; x<w-2; x+=2) {
+                for (let y=2; y<h-2; y+=2) {
+                    if (y == 2) {
+                        //1段目：上/下/右または上/下/左/右を塞ぐ
+                        if (maze[x-1][y] == 1) {
+                            setBlock(x,y,["up","down","right"]);
+                        } else {
+                            setBlock(x,y,["up","down","left","right"]);
+                        }
+                    } else {
+                        //2段目以降：下/右または下/左/右を塞ぐ
+                        if (maze[x-1][y] == 1) {
+                            setBlock(x,y,["down","right"]);
+                        } else {
+                            setBlock(x,y,["down","left","right"]);
+                        }
+                    }
+                }
+            }
+            //描画
+            for (let x=0; x<w; x++) {
+                for (let y=0; y<h; y++) {
+                    if (maze[x][y] == 1) createObject(x,1,y,1,1,1,"#6699FF");
+                }
+            }
+        }
+
+        const setBlock = (x,y,array) => {
+            //塞ぐ方向（ランダム）
+            var index = Math.floor(Math.random() * array.length);
+            //通路を塞ぎ壁にする
+            if (array[index] == "up") maze[x][y-1] = 1;
+            if (array[index] == "down") maze[x][y+1] = 1;
+            if (array[index] == "left") maze[x-1][y] = 1;
+            if (array[index] == "right") maze[x+1][y] = 1;
+        }
+
+        const walk = event => {
+            //移動（カメラの位置を変更）
+            if ((dx == 0)&&(dy == 0)&&(da == 0)) {
+                if (event.key == "ArrowUp") {
+                    //前へ進む
+                    dx = Math.round(Math.cos(angle/180*Math.PI));
+                    dy = Math.round(Math.sin(angle/180*Math.PI));
+                    if (maze[px+dx][py+dy] == 1) [dx,dy] = [0,0];
+                } else if (event.key == "ArrowDown") {
+                    //後ろへ進む
+                    dx = -1 * Math.round(Math.cos(angle/180*Math.PI));
+                    dy = -1 * Math.round(Math.sin(angle/180*Math.PI));
+                    if (maze[px+dx][py+dy] == 1) [dx,dy] = [0,0];
+                } else if (event.key == "ArrowLeft") {
+                    //左を向く
+                    da = -9;
+                } else if (event.key == "ArrowRight") {
+                    //右を向く
+                    da = 9;
+                }
+                cnt = 0;
+            }
+        }
+
+        const update = () => {
+            //プレイヤーの移動、回転
+            if ((dx !=0)||(dy != 0)) {
+                //移動
+                if (cnt < 10) {
+                    px += dx / 10;
+                    py += dy / 10;
+                    cnt++;
+                } else {
+                    [dx,dy] = [0,0];
+                    [px,py] = [Math.round(px),Math.round(py)];
+                }
+            } else if (da !=0) {
+                //回転
+                if (cnt < 10) {
+                    angle += da;
+                    cnt++;
+                } else {
+                    da = 0;
+                }
+            }
+            player.position.set(px, 1,py);
+            player.rotation.y = -1 * angle/180*Math.PI;
+            const cx = px + Math.cos(angle/180*Math.PI) * 0.5;
+            const cy = px + Math.sin(angle/180*Math.PI) * 0.5;
+            pLight.position.set(cx,1,cy);
+            if (document.getElementById("hint").checked) {
+                //迷路を上から見る
+                camera.position.set(w/2,30,h/2);
+                camera.lookAt(new THREE.Vector3(w/2,0,h/2));
+                ambientLight.intensity = 1.0;
+            } else {
+                //プレイヤー視点
+                camera.position.set(px,1,py);
+                camera.lookAt(new THREE.Vector3(cx,1,cy));
+                ambientLight.intensity = 0.5;
+            }
+            //更新
+            renderer.render(scene,camera);
+            window.requestAnimationFrame(update);
+        }
+    </script>
+</head>
+<body onload="init()">
+    <p>3D 迷路</p>
+    <input type="checkbox" id="hint">迷路を上から見る
+    <hr>
+    <div id="renderArea"></div>
+    [←][→]：向きを変える　[↑]：前へ進む　[↓]：後ろへ進む    
+</body>
+</html>
